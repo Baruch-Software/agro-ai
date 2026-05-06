@@ -42,6 +42,20 @@ MOCK_AI_RESPONSE = {
     "recommended_actions": ["Monitor soil moisture", "Continue fieldwork"],
     "timeframe_hours": 72,
     "detailed_analysis": "Expert AI analysis of weather patterns.",
+    "daily_outlook": [
+        {
+            "date": "2026-05-06",
+            "summary": "Clear skies, 18°C max, ideal for fieldwork",
+            "risk_level": "low",
+            "key_actions": ["Spray window open", "Good harvest conditions"],
+        },
+        {
+            "date": "2026-05-07",
+            "summary": "Cold front arrives, 8°C max, 15mm rain expected",
+            "risk_level": "high",
+            "key_actions": ["Suspend fumigation", "Protect frost-sensitive crops"],
+        },
+    ],
 }
 
 
@@ -168,6 +182,9 @@ class TestAIAnalysis:
         data = response.json()
         assert "AI:" in data["impact_description"]
         assert data["detailed_analysis"] is not None
+        assert len(data["daily_outlook"]) == 2
+        assert data["daily_outlook"][0]["date"] == "2026-05-06"
+        assert data["daily_outlook"][1]["risk_level"] == "high"
 
     def test_fallback_on_ai_failure(self, client, monkeypatch):
         monkeypatch.setattr(

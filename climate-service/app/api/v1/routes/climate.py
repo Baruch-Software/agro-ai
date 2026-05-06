@@ -7,7 +7,7 @@ from app.clients.nasa_power_client import NasaPowerClient
 from app.clients.nvidia_llm_client import NvidiaLlmClient
 from app.clients.open_meteo_client import OpenMeteoClient
 from app.config import settings
-from app.models.weather_datapoint import ClimateImpact
+from app.models.weather_datapoint import ClimateImpact, DailyOutlook
 from app.services.translation_service import TranslationService
 
 logger = logging.getLogger(__name__)
@@ -114,6 +114,18 @@ async def _analyze_with_ai(
         if not (0.0 <= probability <= 1.0):
             probability = 0.5
 
+        daily_outlook = []
+        for day in analysis.get("daily_outlook", []):
+            day_risk = day.get("risk_level", "low")
+            if day_risk not in VALID_RISK_LEVELS:
+                day_risk = "medium"
+            daily_outlook.append(DailyOutlook(
+                date=day.get("date", ""),
+                summary=day.get("summary", ""),
+                risk_level=day_risk,
+                key_actions=day.get("key_actions", []),
+            ))
+
         return ClimateImpact(
             sector=sector,
             risk_level=risk_level,
@@ -122,6 +134,7 @@ async def _analyze_with_ai(
             recommended_actions=analysis.get("recommended_actions", []),
             timeframe_hours=analysis.get("timeframe_hours", 72),
             detailed_analysis=analysis.get("detailed_analysis"),
+            daily_outlook=daily_outlook,
         )
     except Exception as e:
         logger.error("NVIDIA LLM error: %s — falling back to rules", str(e))

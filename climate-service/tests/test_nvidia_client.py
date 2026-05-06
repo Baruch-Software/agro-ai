@@ -73,16 +73,28 @@ class TestNvidiaLlmClient:
 
     def test_build_system_prompt_english(self):
         client = NvidiaLlmClient("test-key")
-        prompt = client._build_system_prompt("en")
+        prompt = client._build_system_prompt("en", "agro")
         assert "senior meteorologist" in prompt
         assert "Response in English" in prompt
         assert "JSON" in prompt
-        assert "SYNOPTIC ANALYSIS" in prompt
+        assert "daily_outlook" in prompt
 
     def test_build_system_prompt_spanish(self):
         client = NvidiaLlmClient("test-key")
-        prompt = client._build_system_prompt("es")
+        prompt = client._build_system_prompt("es", "agro")
         assert "Response in Spanish" in prompt
+
+    def test_build_system_prompt_agro_sector(self):
+        client = NvidiaLlmClient("test-key")
+        prompt = client._build_system_prompt("en", "agro")
+        assert "AGRICULTURE" in prompt
+        assert "frost" in prompt.lower()
+
+    def test_build_system_prompt_citizen_sector(self):
+        client = NvidiaLlmClient("test-key")
+        prompt = client._build_system_prompt("en", "citizen")
+        assert "GENERAL PUBLIC" in prompt
+        assert "umbrella" in prompt.lower()
 
     def test_build_user_prompt_without_forecast(self):
         client = NvidiaLlmClient("test-key")

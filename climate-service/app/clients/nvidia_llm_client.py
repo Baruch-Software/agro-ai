@@ -41,7 +41,7 @@ class NvidiaLlmClient:
         forecast: Optional[dict[str, Any]] = None,
     ) -> Optional[dict[str, Any]]:
         """Send weather + forecast data to LLM for expert analysis."""
-        system_prompt = self._build_system_prompt(lang)
+        system_prompt = self._build_system_prompt(lang, sector)
         user_prompt = self._build_user_prompt(
             weather_data, sector, lat, lon, lang, forecast
         )
@@ -53,7 +53,7 @@ class NvidiaLlmClient:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": 1200,
+            "max_tokens": 2000,
         }
 
         response = await self.client.post(
@@ -67,45 +67,76 @@ class NvidiaLlmClient:
         response.raise_for_status()
         return self._parse_response(response.json())
 
-    def _build_system_prompt(self, lang: str) -> str:
+    def _build_system_prompt(self, lang: str, sector: str = "citizen") -> str:
         """Build system prompt for weather analysis."""
         lang_instruction = "Response in Spanish." if lang == "es" else "Response in English."
 
+        sector_prompts = {
+            "agro": (
+                "FOR AGRICULTURE: Think like an agronomist. Each day say: "
+                "can I spray? can I harvest? frost risk tonight? soil too wet for machinery? "
+                "ideal sowing/planting window? wind too strong for fumigation (>15km/h)? "
+                "Use farmer language: 'helada', 'ventana de fumigación', 'piso para maquinaria'."
+            ),
+            "energy": (
+                "FOR ENERGY: Each day say: solar generation outlook (cloud cover %), "
+                "wind generation potential (sustained wind speed), peak demand risk (extreme temps), "
+                "grid stress probability. Be specific with generation percentages."
+            ),
+            "logistics": (
+                "FOR LOGISTICS: Each day say: road conditions, visibility risk (fog/rain), "
+                "wind restrictions for high-profile vehicles, flood risk for low routes, "
+                "optimal departure windows. Think like a fleet dispatcher."
+            ),
+            "insurance": (
+                "FOR INSURANCE: Each day say: parametric trigger probability, "
+                "hail/frost/flood claim risk, crop damage probability, "
+                "property damage risk. Quantify expected loss severity."
+            ),
+            "citizen": (
+                "FOR GENERAL PUBLIC: Each day say in simple language: "
+                "what to wear, umbrella needed?, outdoor plans safe?, "
+                "health risks (heat/cold/UV/allergy), commute impact. "
+                "Think like a friendly TV weather presenter giving practical advice."
+            ),
+        }
+        sector_hint = sector_prompts.get(sector, "")
+
         return (
-            "You are a senior meteorologist with 25 years of operational forecasting experience, "
-            "specializing in mesoscale weather analysis and sector-specific climate risk assessment. "
-            "You interpret raw weather data the way a human forecaster at a national weather service would: "
-            "identifying synoptic patterns, frontal passages, pressure tendencies, and their cascading "
-            "impacts on specific economic sectors.\n\n"
-            "YOUR METHODOLOGY:\n"
-            "1. SYNOPTIC ANALYSIS: Read pressure trends, wind shifts, and temperature changes to identify "
-            "weather systems (cold fronts, warm fronts, low-pressure centers, anticyclones).\n"
-            "2. TEMPORAL PATTERN: Compare recent observations vs forecast to detect approaching changes "
-            "(temperature drops = cold front, pressure falling = approaching low, wind direction shifts).\n"
-            "3. SEVERITY ASSESSMENT: Quantify the magnitude — is this a minor cool-down or a major polar "
-            "outbreak? Use thresholds relevant to the region and season.\n"
-            "4. SECTOR IMPACT: Translate meteorological events into specific sector consequences with "
-            "actionable detail (not generic advice).\n"
-            "5. TIMING: Be precise about WHEN impacts will occur (tonight, tomorrow morning, next 48h).\n\n"
+            "You are a senior meteorologist and sector consultant. Your job is to give "
+            "PRACTICAL, DAY-BY-DAY forecasts that help people make real decisions.\n\n"
+            "ANALYSIS METHOD:\n"
+            "1. Read pressure trends, wind shifts, temp changes to identify weather systems.\n"
+            "2. Compare current observations vs forecast to detect approaching changes.\n"
+            "3. Translate each day into CONCRETE actions for the specific sector.\n\n"
             "CRITICAL RULES:\n"
-            "- If forecast shows a significant weather change (temp drop >8°C, front passage, storm), "
-            "this MUST dominate your analysis. Do NOT focus on current calm conditions when a major "
-            "change is forecast.\n"
-            "- Be SPECIFIC: mention actual temperatures, wind speeds, precipitation amounts from the data.\n"
-            "- Risk level MUST reflect the FORECAST, not just current conditions.\n"
-            "- recommended_actions must be CONCRETE and ACTIONABLE for the specific sector.\n\n"
-            "Return ONLY valid JSON with this exact structure:\n"
+            "- DO NOT write generic meteorological essays. Be DIRECT and PRACTICAL.\n"
+            "- Each day in daily_outlook must have a one-line summary and 2-3 specific actions.\n"
+            "- Use ACTUAL numbers from the data (temperatures, mm of rain, wind speed).\n"
+            "- If a major weather change is coming (front, storm, polar outbreak), "
+            "make it the CENTER of your response.\n"
+            "- impact_description: 2 sentences MAX. What's the headline? What should they do NOW?\n"
+            "- detailed_analysis: 2 short paragraphs MAX. Synoptic situation + practical outlook.\n"
+            "- recommended_actions: TOP 3 most urgent actions, not generic advice.\n\n"
+            f"{sector_hint}\n\n"
+            "Return ONLY valid JSON:\n"
             "{\n"
             '  "risk_level": "low|medium|high|very_high",\n'
-            '  "impact_description": "concise 2-3 sentence impact summary focusing on the most important change",\n'
+            '  "impact_description": "2-sentence headline: what is happening + what to do now",\n'
             '  "probability": 0.0-1.0,\n'
-            '  "recommended_actions": ["specific action 1", "specific action 2", "specific action 3"],\n'
+            '  "recommended_actions": ["urgent action 1", "urgent action 2", "urgent action 3"],\n'
             '  "timeframe_hours": 24-168,\n'
-            '  "detailed_analysis": "Full professional meteorological briefing (3-4 paragraphs): '
-            "synoptic situation, expected evolution, sector impacts, and timing. "
-            'Write as if briefing a client who needs to make operational decisions."\n'
+            '  "detailed_analysis": "2 short paragraphs: synoptic situation + practical outlook",\n'
+            '  "daily_outlook": [\n'
+            "    {\n"
+            '      "date": "YYYY-MM-DD",\n'
+            '      "summary": "one-line: what happens this day + key number (temp/rain/wind)",\n'
+            '      "risk_level": "low|medium|high|very_high",\n'
+            '      "key_actions": ["concrete action 1", "concrete action 2"]\n'
+            "    }\n"
+            "  ]\n"
             "}\n\n"
-            "IMPORTANT: Return ONLY the JSON object. No markdown, no code blocks, no extra text.\n"
+            "IMPORTANT: Return ONLY the JSON. No markdown, no code blocks.\n"
             f"{lang_instruction}"
         )
 

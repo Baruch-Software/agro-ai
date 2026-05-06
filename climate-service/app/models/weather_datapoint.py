@@ -17,6 +17,15 @@ class WeatherDataPoint(BaseModel):
     solar_radiation: Optional[float] = Field(None, description="Solar radiation (W/m²)")
 
 
+class DailyOutlook(BaseModel):
+    """Single day forecast outlook with actionable info."""
+
+    date: str = Field(..., description="Date YYYY-MM-DD")
+    summary: str = Field(..., description="One-line day summary")
+    risk_level: str = Field(..., description="Day risk: low/medium/high/very_high")
+    key_actions: list[str] = Field(default_factory=list, description="2-3 concrete actions for this day")
+
+
 class ClimateImpact(BaseModel):
     """Interpreted climate impact for a specific sector."""
 
@@ -27,3 +36,4 @@ class ClimateImpact(BaseModel):
     recommended_actions: list[str] = Field(default_factory=list)
     timeframe_hours: int = Field(..., description="Impact timeframe in hours")
     detailed_analysis: Optional[str] = Field(None, description="AI expert analysis")
+    daily_outlook: list[DailyOutlook] = Field(default_factory=list, description="Day-by-day outlook")
