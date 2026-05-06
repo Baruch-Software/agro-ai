@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openweather_api_key: str = ""
     nasa_power_api_key: Optional[str] = None
     openweather_base_url: str = "https://api.openweathermap.org/data/2.5"
-    nasa_power_base_url: str = "https://power.larc.nasa.gov/api/v2"
+    nasa_power_base_url: str = "https://power.larc.nasa.gov/api"
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/climate_service"
     redis_url: str = "redis://localhost:6379"
