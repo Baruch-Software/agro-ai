@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,6 +9,15 @@ MOCK_WEATHER = {
     "humidity": 68.55,
     "wind_speed": 2.43,
     "solar_radiation": 16.39,
+}
+
+MOCK_AI_RESPONSE = {
+    "risk_level": "low",
+    "impact_description": "AI: Favorable conditions for agriculture",
+    "probability": 0.8,
+    "recommended_actions": ["Monitor soil moisture", "Continue fieldwork"],
+    "timeframe_hours": 72,
+    "detailed_analysis": "Expert AI analysis of weather patterns.",
 }
 
 
@@ -26,8 +35,14 @@ def mock_nasa(monkeypatch):
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_nvidia_disabled(monkeypatch):
+    """Disable NVIDIA by default (empty key) → tests use rule-based fallback."""
+    monkeypatch.setattr("app.api.v1.routes.climate.settings.nvidia_api_key", "")
+
+
 class TestClimateImpactEndpoint:
-    """Tests for GET /api/v1/climate/impact."""
+    """Tests for GET /api/v1/climate/impact with rule-based fallback."""
 
     @pytest.mark.parametrize("sector", ["agro", "energy", "logistics", "insurance", "citizen"])
     def test_valid_sectors(self, client, sector):
@@ -90,6 +105,91 @@ class TestClimateImpactEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["risk_level"] == "unknown"
+
+
+class TestAIAnalysis:
+    """Tests for NVIDIA LLM AI-powered analysis."""
+
+    def test_ai_analysis_used_when_key_present(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.settings.nvidia_api_key", "test-key"
+        )
+        mock_analyze = AsyncMock(return_value=MOCK_AI_RESPONSE)
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.analyze_weather", mock_analyze
+        )
+        mock_close = AsyncMock()
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.close", mock_close
+        )
+
+        response = client.get(
+            "/api/v1/climate/impact", params={"lat": -31.0, "lon": -64.0, "sector": "agro"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "AI:" in data["impact_description"]
+        assert data["detailed_analysis"] is not None
+
+    def test_fallback_on_ai_failure(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.settings.nvidia_api_key", "test-key"
+        )
+        mock_analyze = AsyncMock(side_effect=Exception("LLM down"))
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.analyze_weather", mock_analyze
+        )
+        mock_close = AsyncMock()
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.close", mock_close
+        )
+
+        response = client.get(
+            "/api/v1/climate/impact", params={"lat": -31.0, "lon": -64.0, "sector": "agro"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["detailed_analysis"] is None
+
+    def test_fallback_on_ai_parse_failure(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.settings.nvidia_api_key", "test-key"
+        )
+        mock_analyze = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.analyze_weather", mock_analyze
+        )
+        mock_close = AsyncMock()
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.close", mock_close
+        )
+
+        response = client.get(
+            "/api/v1/climate/impact", params={"lat": -31.0, "lon": -64.0, "sector": "agro"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["detailed_analysis"] is None
+
+    def test_ai_invalid_risk_level_normalized(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.settings.nvidia_api_key", "test-key"
+        )
+        bad_response = {**MOCK_AI_RESPONSE, "risk_level": "extreme"}
+        mock_analyze = AsyncMock(return_value=bad_response)
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.analyze_weather", mock_analyze
+        )
+        mock_close = AsyncMock()
+        monkeypatch.setattr(
+            "app.api.v1.routes.climate.NvidiaLlmClient.close", mock_close
+        )
+
+        response = client.get(
+            "/api/v1/climate/impact", params={"lat": -31.0, "lon": -64.0, "sector": "agro"}
+        )
+        data = response.json()
+        assert data["risk_level"] == "medium"
 
 
 class TestLanguageParam:

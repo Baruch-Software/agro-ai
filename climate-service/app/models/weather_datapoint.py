@@ -26,3 +26,4 @@ class ClimateImpact(BaseModel):
     probability: float = Field(..., ge=0, le=1, description="Probability 0-1")
     recommended_actions: list[str] = Field(default_factory=list)
     timeframe_hours: int = Field(..., description="Impact timeframe in hours")
+    detailed_analysis: Optional[str] = Field(None, description="AI expert analysis")

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     openweather_api_key: str = ""
     nasa_power_api_key: Optional[str] = None
+    nvidia_api_key: str = ""
+    nvidia_model: str = "meta/llama-3.3-70b-instruct"
     openweather_base_url: str = "https://api.openweathermap.org/data/2.5"
     nasa_power_base_url: str = "https://power.larc.nasa.gov/api"
 
