@@ -11,6 +11,30 @@ MOCK_WEATHER = {
     "solar_radiation": 16.39,
 }
 
+MOCK_FORECAST = {
+    "timezone": "America/Argentina/Cordoba",
+    "daily_forecast": [
+        {
+            "date": "2026-05-06",
+            "temp_max": 18.0,
+            "temp_min": 10.0,
+            "apparent_temp_max": 16.0,
+            "apparent_temp_min": 8.0,
+            "precipitation_sum": 0.0,
+            "precipitation_probability": 10,
+            "wind_max": 3.0,
+            "wind_gusts_max": 8.0,
+            "wind_direction": 180,
+            "uv_index_max": 4.0,
+            "weather_code": 1,
+            "sunrise": "2026-05-06T07:15",
+            "sunset": "2026-05-06T18:00",
+        }
+    ],
+    "next_24h_hourly": [],
+    "pressure_trend": "stable",
+}
+
 MOCK_AI_RESPONSE = {
     "risk_level": "low",
     "impact_description": "AI: Favorable conditions for agriculture",
@@ -31,6 +55,20 @@ def mock_nasa(monkeypatch):
     mock_close = AsyncMock()
     monkeypatch.setattr(
         "app.api.v1.routes.climate.NasaPowerClient.close", mock_close
+    )
+    return mock
+
+
+@pytest.fixture(autouse=True)
+def mock_open_meteo(monkeypatch):
+    """Mock Open-Meteo client for all endpoint tests."""
+    mock = AsyncMock(return_value=MOCK_FORECAST)
+    monkeypatch.setattr(
+        "app.api.v1.routes.climate.OpenMeteoClient.get_forecast", mock
+    )
+    mock_close = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.v1.routes.climate.OpenMeteoClient.close", mock_close
     )
     return mock
 

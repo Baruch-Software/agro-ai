@@ -1,9 +1,11 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.clients.nasa_power_client import NasaPowerClient
 from app.clients.nvidia_llm_client import NvidiaLlmClient
+from app.clients.open_meteo_client import OpenMeteoClient
 from app.config import settings
 from app.models.weather_datapoint import ClimateImpact
 from app.services.translation_service import TranslationService
@@ -32,24 +34,27 @@ async def get_climate_impact(
 ) -> ClimateImpact:
     """Get climate impact assessment for coordinates and sector."""
     nasa_client = NasaPowerClient(settings.nasa_power_base_url)
+    meteo_client = OpenMeteoClient()
     fallback_service = TranslationService()
 
     try:
-        weather = await nasa_client.get_recent_weather(lat, lon)
-    except Exception as e:
-        logger.error("NASA POWER API error: %s", str(e))
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to fetch weather data from NASA POWER: {str(e)}",
+        weather, forecast = await asyncio.gather(
+            _fetch_nasa(nasa_client, lat, lon),
+            _fetch_forecast(meteo_client, lat, lon),
         )
     finally:
-        await nasa_client.close()
+        await asyncio.gather(
+            nasa_client.close(),
+            meteo_client.close(),
+        )
 
-    if weather is None:
+    if weather is None and forecast is None:
         return fallback_service.translate_weather_to_impact(None, sector, lang)
 
     if settings.nvidia_api_key:
-        ai_result = await _analyze_with_ai(weather, sector, lat, lon, lang)
+        ai_result = await _analyze_with_ai(
+            weather, sector, lat, lon, lang, forecast
+        )
         if ai_result is not None:
             return ai_result
 
@@ -57,17 +62,46 @@ async def get_climate_impact(
     return fallback_service.translate_weather_to_impact(weather, sector, lang)
 
 
+async def _fetch_nasa(client: NasaPowerClient, lat: float, lon: float) -> dict | None:
+    """Fetch NASA data, raise 502 on failure."""
+    try:
+        return await client.get_recent_weather(lat, lon)
+    except Exception as e:
+        logger.error("NASA POWER API error: %s", str(e))
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch weather data from NASA POWER: {str(e)}",
+        )
+
+
+async def _fetch_forecast(
+    client: OpenMeteoClient, lat: float, lon: float
+) -> dict | None:
+    """Fetch Open-Meteo forecast, return None on failure (non-critical)."""
+    try:
+        return await client.get_forecast(lat, lon)
+    except Exception as e:
+        logger.warning("Open-Meteo forecast error (non-critical): %s", str(e))
+        return None
+
+
 async def _analyze_with_ai(
-    weather: dict,
+    weather: dict | None,
     sector: str,
     lat: float,
     lon: float,
     lang: str,
+    forecast: dict | None = None,
 ) -> ClimateImpact | None:
     """Attempt AI-powered analysis, return None on failure."""
+    if weather is None:
+        weather = {}
+
     llm_client = NvidiaLlmClient(settings.nvidia_api_key, settings.nvidia_model)
     try:
-        analysis = await llm_client.analyze_weather(weather, sector, lat, lon, lang)
+        analysis = await llm_client.analyze_weather(
+            weather, sector, lat, lon, lang, forecast
+        )
         if analysis is None:
             logger.warning("LLM returned unparseable response, falling back")
             return None
