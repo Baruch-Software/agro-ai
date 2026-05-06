@@ -137,7 +137,11 @@ async def _analyze_with_ai(
             daily_outlook=daily_outlook,
         )
     except Exception as e:
-        logger.error("NVIDIA LLM error: %s — falling back to rules", str(e))
+        logger.error(
+            "NVIDIA LLM error: [%s] %s — falling back to rules",
+            type(e).__name__, str(e),
+            exc_info=True,
+        )
         return None
     finally:
         await llm_client.close()
